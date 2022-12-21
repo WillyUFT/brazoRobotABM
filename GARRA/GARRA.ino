@@ -8,8 +8,6 @@ SoftwareSerial BT(10, 11);  //6 7  10 11 (rx, tx)
 unsigned char *buffer;
 String mensaje = "";
 
-bool standBy = false;
-
 // Creamos los servos
 Servo garra;
 Servo brazoAzul;
@@ -19,10 +17,13 @@ Servo base;
 // Posición inicial
 int pos;
 
-// Estados del robot
+// Estados de la lectura
 #define LEYENDO 1
 #define LEIDO 2
 #define ESPERANDO 0
+
+// Estados del robot
+String State = "Init";
 
 void setup() {
   garra.attach(3);
@@ -32,14 +33,15 @@ void setup() {
   Serial.begin(9600);
   BT.begin(9600);
   buffer = malloc(1000);
+
+  ////// Posiciones iniciales ///////////
+  brazoAzul.write(30);
+  brazoRojo.write(20);
+  garra.write(120);
+  base.write(0);
+
   esperarArriba();
 }
-
-////// Posiciones iniciales ///////////
-// brazoAzul.write(170);
-// brazoRojo.write(20);
-// // garra.write(140);
-// base.write(0);
 
 //////////////// MOVER GARRA //////////////////
 void cerrarGarra() {
@@ -106,7 +108,8 @@ void moverBase2() {
 ////////////// STAND BY ///////////////
 void esperarArriba() {
   brazoRojo.write(20);
-  brazoAzul.write(170);
+  brazoAzul.write(60);
+  garra.write(120);
   delay(2000);
 }
 
@@ -129,7 +132,7 @@ void recibir() {
 
     //Serial.write(BT.read());
     c = BT.read();
-    Serial.println(char(c));
+    // Serial.println(char(c));
     if (st_read == LEYENDO && c == '}') {
       size = size + 1;
       buffer[size] = c;
@@ -150,13 +153,28 @@ void recibir() {
   }
 }
 
-bool puedeEmpezar() {
-  String aux = leerMensaje();
-  if (aux == 'gggg') {
-    return true;
-  } else {
-    return false;
+String recibirMensaje() {
+
+  // Recibimos el mensaje
+  recibir();
+
+  if (mensaje_disp()) {
+    String aux = leerMensaje();
+    return aux;
   }
+}
+
+void movimiento() {
+  moverBase();
+  abrirGarra();
+  moverRojoAzulAbajo();
+  cerrarGarra();
+  moverRojoAzulArriba();
+  moverBase2();
+  salirArriba();
+  abrirGarra();
+  moverRojoAzulArribaMitad();
+  esperarArriba();
 }
 
 int mensaje_disp() {
@@ -173,45 +191,27 @@ String leerMensaje() {
   return aux;
 }
 
-/// Hay que activar las funciones en el loop para que esto se mueva
+// Hay que activar las funciones en el loop para que esto se mueva
 void loop() {
+  String mensaje = "";
+  mensaje = recibirMensaje();
 
-  // Vemos si la garra puede comenzar a empezar
-  bool comenzar = puedeEmpezar();
-
-  while (comenzar && !standBy) {
-
-    if (comenzar) {
-      standBy = true;
-    }
-
-    comenzar = puedeEmpezar();
+  if (State == "Init" && mensaje[1] == 's') {
+    State = "Ready";
   }
 
-  while (standBy) {
+  if (State == "Ready" && mensaje[3] == 'c') {
+    State = "Moving";
 
-    // Recibimos el mensaje
-    recibir();
+    Serial.println("Cargando...");
+    movimiento();
+    BT.write('a');
+    Serial.println("Carga terminada...");
 
-    if (mensaje_disp()) {
+    State = "Ready";
+  }
 
-      String aux = leerMensaje();
-
-      if (aux[3] == 'c') {
-        Serial.println("Cargando...");
-        moverBase();
-        abrirGarra();
-        moverRojoAzulAbajo();
-        cerrarGarra();
-        moverRojoAzulArriba();
-        moverBase2();
-        salirArriba();
-        abrirGarra();
-        moverRojoAzulArribaMitad();
-        esperarArriba();
-        BT.write('r');
-        Serial.println("Carga terminada...");
-      }
-    }
+  if (State == "Ready" && mensaje[3] == 'e' || State == "Init" && mensaje[3] == 'e') {
+    State = "Init";
   }
 }
